@@ -6,7 +6,6 @@ export {
 } from './use-auto-save'
 export { useBead, type UseBeadReturn } from './use-bead'
 export { useCook, type UseCookOptions, type UseCookReturn } from './use-cook'
-export { useFormulas, type UseFormulasReturn } from './use-formulas'
 export { useFormulaContent, type UseFormulaContentReturn } from './use-formula-content'
 export { useGraph, type UseGraphReturn, type GraphData } from './use-graph'
 export { useSave, type UseSaveReturn } from './use-save'

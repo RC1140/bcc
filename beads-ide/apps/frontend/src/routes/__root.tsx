@@ -6,7 +6,6 @@ import { BeadDetail } from '../components/beads/bead-detail'
 import {
   AppShell,
   DirectoryBrowser,
-  FormulaTree,
   NewProjectModal,
   WorkspaceHeader,
   WorkspaceTree,
@@ -240,14 +239,10 @@ function RootLayoutInner() {
       <OfflineBanner />
       <AppShell
         sidebarContent={
-          config.rootPath ? (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <WorkspaceHeader onFilterChange={setTreeFilter} />
-              <WorkspaceTree filter={treeFilter} />
-            </div>
-          ) : (
-            <FormulaTree />
-          )
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <WorkspaceHeader onFilterChange={setTreeFilter} />
+            <WorkspaceTree filter={treeFilter} />
+          </div>
         }
         mainContent={
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
