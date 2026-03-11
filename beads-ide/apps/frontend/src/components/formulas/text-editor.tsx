@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap, redo, undo } from '@codemirror/commands'
-import { bracketMatching, defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { bracketMatching } from '@codemirror/language'
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search'
 import { EditorState, type Extension } from '@codemirror/state'
 import {
@@ -12,10 +12,11 @@ import {
 } from '@codemirror/view'
 /**
  * CodeMirror 6 TOML editor for .formula.toml files.
- * Provides syntax validation, undo/redo, and inline error display.
+ * Provides TOML syntax highlighting, validation, undo/redo, and inline error display.
  */
 import { useCallback, useEffect, useRef } from 'react'
 import type { FormulaParseError } from '../../lib/formula-parser'
+import { tomlSupport } from '../../lib/toml-language'
 
 export interface TextEditorProps {
   /** Initial TOML content */
@@ -103,9 +104,6 @@ const darkTheme = EditorView.theme({
   },
 })
 
-/** TOML-like syntax highlighting (basic token coloring) */
-const tomlHighlight = syntaxHighlighting(defaultHighlightStyle)
-
 /** Create base extensions for the editor */
 function createExtensions(onChange: (value: string) => void, readOnly: boolean): Extension[] {
   return [
@@ -116,7 +114,7 @@ function createExtensions(onChange: (value: string) => void, readOnly: boolean):
     bracketMatching(),
     highlightSelectionMatches(),
     history(),
-    tomlHighlight,
+    ...tomlSupport,
     darkTheme,
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
     EditorView.updateListener.of((update) => {

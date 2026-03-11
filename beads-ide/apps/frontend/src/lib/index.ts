@@ -27,3 +27,5 @@ export {
 export { updateVarDefault, updateVarDefaults } from './toml-updater'
 
 export { updateStepField, extractStepIds } from './toml-step-updater'
+
+export { tomlLanguage, tomlHighlightStyle, tomlSupport } from './toml-language'
