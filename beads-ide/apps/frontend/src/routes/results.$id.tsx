@@ -7,6 +7,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { type CSSProperties, useCallback, useMemo, useState } from 'react'
 import { BeadList } from '../components/beads/bead-list'
 import { GraphView, WaveView } from '../components/results'
+import { useBeadSelection } from '../contexts/bead-selection-context'
+import { useGraph } from '../hooks/use-graph'
 
 // --- Types ---
 
@@ -95,12 +97,20 @@ export const Route = createFileRoute('/results/$id')({
 function ResultsPage() {
   const { id } = Route.useParams()
   const [viewMode, setViewMode] = useState<ViewMode>('wave')
-  const [isLoading] = useState(false)
+  const { selectBead } = useBeadSelection()
+  const { graph, metrics, isLoadingGraph } = useGraph()
 
-  // Mock data for now - in real implementation, this would come from an API call
-  // based on the results ID (molecule ID, epic ID, etc.)
+  // Use API data if available, fall back to mock data
   const { nodes, edges, density } = useMemo(() => {
-    // TODO: Replace with actual API call using the id parameter
+    if (graph) {
+      return {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        density: graph.density,
+      }
+    }
+
+    // Fallback mock data when API is unavailable
     const mockNodes: GraphNode[] = [
       { id: `${id}-1`, title: 'Setup infrastructure', status: 'closed', type: 'task', priority: 0 },
       {
@@ -143,17 +153,20 @@ function ResultsPage() {
       edges: mockEdges,
       density: 0.3,
     }
-  }, [id])
+  }, [id, graph])
 
-  const handleBeadClick = useCallback((beadId: string) => {
-    console.log('Bead clicked:', beadId)
-    // TODO: Show bead detail panel
-  }, [])
+  const handleBeadClick = useCallback(
+    (beadId: string) => {
+      selectBead(beadId)
+    },
+    [selectBead]
+  )
 
   const handleBeadDoubleClick = useCallback((beadId: string) => {
     console.log('Bead double-clicked:', beadId)
-    // TODO: Navigate to bead or open in editor
   }, [])
+
+  const isLoading = isLoadingGraph
 
   if (isLoading) {
     return (
@@ -232,6 +245,7 @@ function ResultsPage() {
             nodes={nodes}
             edges={edges}
             density={density}
+            metrics={metrics}
             onBeadClick={handleBeadClick}
             onBeadDoubleClick={handleBeadDoubleClick}
           />

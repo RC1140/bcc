@@ -1,8 +1,21 @@
 /**
  * Graph controls panel for dense graph simplification.
- * Provides toggles for clustering, focus mode, and visual simplification.
+ * Provides toggles for clustering, focus mode, visual simplification,
+ * layout algorithm selection, and metrics overlay.
  */
 import type { CSSProperties } from 'react'
+
+/** Available layout algorithms */
+export type LayoutAlgorithm = 'force-directed' | 'hierarchical' | 'manual'
+
+/** Available metric overlays for node size/color */
+export type MetricOverlay =
+  | 'none'
+  | 'pagerank'
+  | 'betweenness'
+  | 'eigenvector'
+  | 'degree'
+  | 'criticalPath'
 
 export interface GraphSimplificationState {
   /** Collapse epic children into cluster nodes */
@@ -17,6 +30,10 @@ export interface GraphSimplificationState {
   fisheyeMode: boolean
   /** Currently selected node ID (for focus mode) */
   selectedNodeId: string | null
+  /** Active layout algorithm */
+  layout: LayoutAlgorithm
+  /** Active metric overlay */
+  metricOverlay: MetricOverlay
 }
 
 export const DEFAULT_SIMPLIFICATION_STATE: GraphSimplificationState = {
@@ -26,6 +43,8 @@ export const DEFAULT_SIMPLIFICATION_STATE: GraphSimplificationState = {
   semanticZoom: true,
   fisheyeMode: false,
   selectedNodeId: null,
+  layout: 'force-directed',
+  metricOverlay: 'none',
 }
 
 export interface DensityHealth {
@@ -173,6 +192,89 @@ export function GraphControls({ state, onStateChange, density }: GraphControlsPr
           {density.nodeCount} nodes, {density.edgeCount} edges
         </span>
       </div>
+
+      {/* Layout Section */}
+      <fieldset style={{ ...sectionStyle, border: 'none', padding: 0, margin: 0 }}>
+        <legend style={sectionTitleStyle}>Layout</legend>
+        <div style={controlRowStyle}>
+          <label htmlFor="layout-select" style={labelStyle}>
+            Algorithm
+          </label>
+          <select
+            id="layout-select"
+            value={state.layout}
+            onChange={(e) => updateState({ layout: e.target.value as LayoutAlgorithm })}
+            style={selectStyle}
+            aria-label="Layout algorithm"
+          >
+            <option value="force-directed">Force-Directed</option>
+            <option value="hierarchical">Hierarchical</option>
+            <option value="manual">Manual</option>
+          </select>
+        </div>
+      </fieldset>
+
+      {/* Metrics Overlay Section */}
+      <fieldset style={{ ...sectionStyle, border: 'none', padding: 0, margin: 0 }}>
+        <legend style={sectionTitleStyle}>Metrics Overlay</legend>
+        <div style={controlRowStyle}>
+          <label htmlFor="metric-select" style={labelStyle}>
+            Metric
+          </label>
+          <select
+            id="metric-select"
+            value={state.metricOverlay}
+            onChange={(e) => updateState({ metricOverlay: e.target.value as MetricOverlay })}
+            style={selectStyle}
+            aria-label="Metric overlay for node appearance"
+          >
+            <option value="none">None</option>
+            <option value="pagerank">PageRank</option>
+            <option value="betweenness">Betweenness</option>
+            <option value="eigenvector">Eigenvector</option>
+            <option value="degree">Degree</option>
+            <option value="criticalPath">Critical Path</option>
+          </select>
+        </div>
+        {state.metricOverlay !== 'none' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '10px',
+              color: '#888',
+            }}
+          >
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: '#2d5a9e',
+              }}
+            />
+            Low
+            <span
+              style={{
+                flex: 1,
+                height: '4px',
+                background: 'linear-gradient(to right, #2d5a9e, #f14c4c)',
+                borderRadius: '2px',
+              }}
+            />
+            High
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: '#f14c4c',
+              }}
+            />
+          </div>
+        )}
+      </fieldset>
 
       {/* Clustering Section */}
       <fieldset style={{ ...sectionStyle, border: 'none', padding: 0, margin: 0 }}>

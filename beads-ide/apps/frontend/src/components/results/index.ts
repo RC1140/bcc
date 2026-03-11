@@ -8,5 +8,7 @@ export {
   getDensityHealth,
   type GraphSimplificationState,
   type DensityHealth,
+  type LayoutAlgorithm,
+  type MetricOverlay,
 } from './graph-controls'
 export { WaveView, type WaveViewProps } from './wave-view'

@@ -6,8 +6,6 @@ import {
   MiniMap,
   type Node,
   type NodeTypes,
-  type OnEdgesChange,
-  type OnNodesChange,
   Panel,
   ReactFlow,
   useEdgesState,
@@ -18,6 +16,10 @@ import {
  * Implements dense graph simplification strategies for 50-200 bead graphs.
  *
  * Features:
+ * - Three layout algorithms: force-directed, hierarchical, manual
+ * - Metrics overlay: node size/color reflect selected metric value
+ * - Node shapes by bead type: hexagon = epic, circle = task
+ * - Edge styles by dependency type: solid = blocks, dashed = related
  * - Epic clustering: collapse epic children into single cluster nodes
  * - Focus mode: show N-hop neighborhood of selected node
  * - Semantic zoom: hide labels and simplify edges when zoomed out
@@ -36,12 +38,15 @@ import {
   useState,
 } from 'react'
 import '@xyflow/react/dist/style.css'
-import type { GraphEdge, GraphNode } from '@beads-ide/shared'
+import type { GraphEdge, GraphMetrics, GraphNode } from '@beads-ide/shared'
+import dagre from '@dagrejs/dagre'
 import { useReducedMotion } from '../../hooks/use-reduced-motion'
 import {
   DEFAULT_SIMPLIFICATION_STATE,
   GraphControls,
   type GraphSimplificationState,
+  type LayoutAlgorithm,
+  type MetricOverlay,
   getDensityHealth,
 } from './graph-controls'
 
@@ -66,6 +71,10 @@ interface BeadData extends Record<string, unknown> {
   isCluster: false
   dimmed?: boolean
   reducedMotion?: boolean
+  /** Metric value for overlay (0-1 normalized) */
+  metricValue?: number
+  /** Whether a metric overlay is active */
+  hasMetric?: boolean
 }
 
 type NodeData = ClusterData | BeadData
@@ -77,6 +86,8 @@ interface GraphViewProps {
   edges: GraphEdge[]
   /** Graph density (0-1) */
   density: number
+  /** Graph metrics from API (for overlay) */
+  metrics?: GraphMetrics | null
   /** Callback when a bead is clicked */
   onBeadClick?: (beadId: string) => void
   /** Callback when a bead is double-clicked */
@@ -111,59 +122,133 @@ const NODE_HEIGHT = 60
 const CLUSTER_NODE_WIDTH = 200
 const CLUSTER_NODE_HEIGHT = 80
 
+// Manual positions localStorage key
+const MANUAL_POSITIONS_KEY = 'beads-ide:graph-manual-positions'
+
 /**
- * Custom node component for beads
+ * Interpolate between two colors based on a value 0-1.
+ * Goes from blue (low) to red (high).
+ */
+function metricColor(value: number): string {
+  const r = Math.round(45 + value * 196) // 45 -> 241
+  const g = Math.round(90 - value * 14) // 90 -> 76
+  const b = Math.round(158 - value * 82) // 158 -> 76
+  return `rgb(${r}, ${g}, ${b})`
+}
+
+/**
+ * Compute node scale based on metric value (1.0 to 1.6)
+ */
+function metricScale(value: number): number {
+  return 1 + value * 0.6
+}
+
+/**
+ * Get the SVG clip-path / shape styles for bead type.
+ * Hexagon for epic, circle for task, default rectangle.
+ */
+function getNodeShapeStyle(type?: string): CSSProperties {
+  switch (type?.toLowerCase()) {
+    case 'epic':
+      return {
+        clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
+      }
+    case 'task':
+      return {
+        borderRadius: '50%',
+      }
+    case 'bug':
+      return {
+        borderRadius: '6px',
+        transform: 'rotate(45deg)',
+      }
+    default:
+      return {
+        borderRadius: '6px',
+      }
+  }
+}
+
+/**
+ * Custom node component for beads with type-based shapes and metric overlay
  */
 function BeadNode({ data }: { data: BeadData }) {
   const statusColor = getStatusColor(data.status)
   const opacity = data.dimmed ? 0.3 : 1
+  const scale = data.hasMetric && data.metricValue !== undefined ? metricScale(data.metricValue) : 1
+  const borderColor =
+    data.hasMetric && data.metricValue !== undefined ? metricColor(data.metricValue) : statusColor
+  const shapeStyle = getNodeShapeStyle(data.type)
+  const isCircle = data.type?.toLowerCase() === 'task'
+  const isHexagon = data.type?.toLowerCase() === 'epic'
+  const isBug = data.type?.toLowerCase() === 'bug'
+
+  const width = isCircle ? NODE_HEIGHT : NODE_WIDTH
+  const height = NODE_HEIGHT
 
   return (
     <div
       style={{
-        padding: '10px 12px',
-        borderRadius: '6px',
-        backgroundColor: '#2d2d2d',
-        border: `2px solid ${statusColor}`,
-        width: NODE_WIDTH,
-        minHeight: NODE_HEIGHT,
-        opacity,
-        transition: data.reducedMotion ? 'none' : 'opacity 0.2s ease',
+        transform: `scale(${scale})${isBug ? ' rotate(45deg)' : ''}`,
+        transition: data.reducedMotion ? 'none' : 'transform 0.2s ease, opacity 0.2s ease',
       }}
     >
       <div
         style={{
-          fontSize: '11px',
-          color: '#888',
-          marginBottom: '4px',
-          fontFamily: 'monospace',
+          padding: isCircle ? '8px' : '10px 12px',
+          backgroundColor: '#2d2d2d',
+          border: `2px solid ${borderColor}`,
+          width,
+          minHeight: height,
+          opacity,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: isCircle ? 'center' : 'flex-start',
+          ...shapeStyle,
+          ...(isBug ? { transform: 'none' } : {}),
         }}
       >
-        {data.id}
-      </div>
-      <div
-        style={{
-          fontSize: '12px',
-          color: '#ccc',
-          fontWeight: 500,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {data.title}
-      </div>
-      {data.type && (
         <div
           style={{
-            fontSize: '10px',
-            color: '#666',
-            marginTop: '4px',
+            fontSize: '11px',
+            color: '#888',
+            marginBottom: isCircle ? '2px' : '4px',
+            fontFamily: 'monospace',
+            textAlign: isCircle ? 'center' : 'left',
+            ...(isBug ? { transform: 'rotate(-45deg)' } : {}),
           }}
         >
-          {data.type}
+          {data.id}
         </div>
-      )}
+        <div
+          style={{
+            fontSize: isCircle ? '10px' : '12px',
+            color: '#ccc',
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            textAlign: isCircle ? 'center' : 'left',
+            maxWidth: isCircle ? NODE_HEIGHT - 20 : NODE_WIDTH - 24,
+            ...(isBug ? { transform: 'rotate(-45deg)' } : {}),
+          }}
+        >
+          {data.title}
+        </div>
+        {!isCircle && !isHexagon && data.type && (
+          <div
+            style={{
+              fontSize: '10px',
+              color: '#666',
+              marginTop: '4px',
+              ...(isBug ? { transform: 'rotate(-45deg)' } : {}),
+            }}
+          >
+            {data.type}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -353,12 +438,233 @@ function applyFisheyeDistortion(
 }
 
 /**
+ * Extract metric values for each node ID based on the selected metric overlay.
+ * Returns a map of node ID -> normalized value (0-1).
+ */
+function extractMetricValues(
+  metrics: GraphMetrics | null | undefined,
+  overlay: MetricOverlay
+): Map<string, number> {
+  const values = new Map<string, number>()
+  if (!metrics || overlay === 'none') return values
+
+  let rawScores: { id: string; score: number }[] = []
+
+  switch (overlay) {
+    case 'pagerank':
+      rawScores = metrics.pagerank?.map((m) => ({ id: m.id, score: m.score })) ?? []
+      break
+    case 'betweenness':
+      rawScores = metrics.betweenness?.map((m) => ({ id: m.id, score: m.score })) ?? []
+      break
+    case 'eigenvector':
+      rawScores = metrics.eigenvector?.map((m) => ({ id: m.id, score: m.score })) ?? []
+      break
+    case 'degree':
+      rawScores = metrics.degree?.map((m) => ({ id: m.id, score: m.totalDegree })) ?? []
+      break
+    case 'criticalPath': {
+      // For critical path, nodes on the path get 1.0, others get slack-based values
+      const path = new Set(metrics.criticalPath?.path ?? [])
+      const slack = metrics.criticalPath?.slack ?? {}
+      const maxSlack = Math.max(1, ...Object.values(slack))
+      for (const [id, s] of Object.entries(slack)) {
+        values.set(id, path.has(id) ? 1.0 : 1.0 - s / maxSlack)
+      }
+      return values
+    }
+  }
+
+  if (rawScores.length === 0) return values
+
+  // Normalize to 0-1
+  const maxScore = Math.max(...rawScores.map((s) => s.score))
+  if (maxScore === 0) return values
+
+  for (const { id, score } of rawScores) {
+    values.set(id, score / maxScore)
+  }
+
+  return values
+}
+
+/**
+ * Apply force-directed layout using a simple spring simulation.
+ * Positions are computed iteratively.
+ */
+function applyForceDirectedLayout(
+  nodes: Node<NodeData>[],
+  edges: Edge[],
+  width: number,
+  height: number
+): Node<NodeData>[] {
+  if (nodes.length === 0) return nodes
+
+  // Initialize positions in a circle
+  const centerX = width / 2
+  const centerY = height / 2
+  const radius = Math.min(width, height) * 0.35
+
+  const positions: { x: number; y: number }[] = nodes.map((_, i) => {
+    const angle = (2 * Math.PI * i) / nodes.length
+    return {
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle),
+    }
+  })
+
+  const nodeIndex = new Map<string, number>()
+  for (let i = 0; i < nodes.length; i++) {
+    nodeIndex.set(nodes[i].id, i)
+  }
+
+  // Run simulation for fixed iterations
+  const iterations = 50
+  const repulsionStrength = 5000
+  const attractionStrength = 0.01
+  const idealLength = 200
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const temperature = 1 - iter / iterations
+    const forces: { fx: number; fy: number }[] = positions.map(() => ({ fx: 0, fy: 0 }))
+
+    // Repulsion between all node pairs
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const dx = positions[i].x - positions[j].x
+        const dy = positions[i].y - positions[j].y
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1)
+        const force = (repulsionStrength * temperature) / (dist * dist)
+        const fx = (dx / dist) * force
+        const fy = (dy / dist) * force
+        forces[i].fx += fx
+        forces[i].fy += fy
+        forces[j].fx -= fx
+        forces[j].fy -= fy
+      }
+    }
+
+    // Attraction along edges
+    for (const edge of edges) {
+      const si = nodeIndex.get(edge.source)
+      const ti = nodeIndex.get(edge.target)
+      if (si === undefined || ti === undefined) continue
+
+      const dx = positions[ti].x - positions[si].x
+      const dy = positions[ti].y - positions[si].y
+      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1)
+      const force = attractionStrength * (dist - idealLength) * temperature
+      const fx = (dx / dist) * force
+      const fy = (dy / dist) * force
+      forces[si].fx += fx
+      forces[si].fy += fy
+      forces[ti].fx -= fx
+      forces[ti].fy -= fy
+    }
+
+    // Apply forces
+    for (let i = 0; i < positions.length; i++) {
+      positions[i].x += Math.max(-50, Math.min(50, forces[i].fx))
+      positions[i].y += Math.max(-50, Math.min(50, forces[i].fy))
+    }
+  }
+
+  return nodes.map((node, i) => ({
+    ...node,
+    position: { x: positions[i].x, y: positions[i].y },
+  }))
+}
+
+/**
+ * Apply hierarchical layout using dagre.
+ */
+function applyHierarchicalLayout(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>[] {
+  if (nodes.length === 0) return nodes
+
+  const g = new dagre.graphlib.Graph()
+  g.setDefaultEdgeLabel(() => ({}))
+  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 100, marginx: 50, marginy: 50 })
+
+  for (const node of nodes) {
+    const w = node.data?.isCluster ? CLUSTER_NODE_WIDTH : NODE_WIDTH
+    const h = node.data?.isCluster ? CLUSTER_NODE_HEIGHT : NODE_HEIGHT
+    g.setNode(node.id, { width: w, height: h })
+  }
+
+  for (const edge of edges) {
+    g.setEdge(edge.source, edge.target)
+  }
+
+  dagre.layout(g)
+
+  return nodes.map((node) => {
+    const dagreNode = g.node(node.id)
+    if (!dagreNode) return node
+    const w = node.data?.isCluster ? CLUSTER_NODE_WIDTH : NODE_WIDTH
+    const h = node.data?.isCluster ? CLUSTER_NODE_HEIGHT : NODE_HEIGHT
+    return {
+      ...node,
+      position: {
+        x: dagreNode.x - w / 2,
+        y: dagreNode.y - h / 2,
+      },
+    }
+  })
+}
+
+/**
+ * Load manual positions from localStorage
+ */
+function loadManualPositions(): Record<string, { x: number; y: number }> {
+  try {
+    const saved = localStorage.getItem(MANUAL_POSITIONS_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch {
+    // Ignore localStorage errors
+  }
+  return {}
+}
+
+/**
+ * Save manual positions to localStorage
+ */
+function saveManualPositions(positions: Record<string, { x: number; y: number }>): void {
+  try {
+    localStorage.setItem(MANUAL_POSITIONS_KEY, JSON.stringify(positions))
+  } catch {
+    // Ignore localStorage errors
+  }
+}
+
+/**
+ * Apply manual layout - uses saved positions or falls back to grid
+ */
+function applyManualLayout(nodes: Node<NodeData>[]): Node<NodeData>[] {
+  const savedPositions = loadManualPositions()
+  const gridCols = Math.ceil(Math.sqrt(nodes.length))
+
+  return nodes.map((node, index) => {
+    if (savedPositions[node.id]) {
+      return { ...node, position: savedPositions[node.id] }
+    }
+    // Fall back to grid for nodes without saved positions
+    const col = index % gridCols
+    const row = Math.floor(index / gridCols)
+    return {
+      ...node,
+      position: { x: col * 250 + 50, y: row * 120 + 50 },
+    }
+  })
+}
+
+/**
  * Apply simplification to nodes and edges based on current state
  */
 function applySimplification(
   rawNodes: GraphNode[],
   rawEdges: GraphEdge[],
   state: GraphSimplificationState,
+  metrics: GraphMetrics | null | undefined,
   reducedMotion = false
 ): { nodes: Node<NodeData>[]; edges: Edge[] } {
   let processedNodes: GraphNode[] = [...rawNodes]
@@ -420,11 +726,12 @@ function applySimplification(
     focusedNodes = getNHopNeighborhood(state.selectedNodeId, state.focusHops, adjacencyMap)
   }
 
-  // Convert to React Flow format
-  const nodeIdToIndex = new Map<string, number>()
-  const gridCols = Math.ceil(Math.sqrt(processedNodes.length + clusters.size))
+  // Extract metric values for overlay
+  const metricValues = extractMetricValues(metrics, state.metricOverlay)
+  const hasMetric = state.metricOverlay !== 'none' && metricValues.size > 0
 
-  // Position nodes in a grid layout (simple default)
+  // Convert to React Flow format — grid positions as starting point
+  const gridCols = Math.ceil(Math.sqrt(processedNodes.length + clusters.size))
   const flowNodes: Node<NodeData>[] = []
   let index = 0
 
@@ -432,7 +739,6 @@ function applySimplification(
   for (const [epicId, cluster] of clusters) {
     const col = index % gridCols
     const row = Math.floor(index / gridCols)
-    nodeIdToIndex.set(`cluster-${epicId}`, index)
 
     flowNodes.push({
       id: `cluster-${epicId}`,
@@ -447,7 +753,6 @@ function applySimplification(
   for (const node of processedNodes) {
     const col = index % gridCols
     const row = Math.floor(index / gridCols)
-    nodeIdToIndex.set(node.id, index)
 
     const dimmed = focusedNodes !== null && !focusedNodes.has(node.id)
 
@@ -465,25 +770,33 @@ function applySimplification(
         isCluster: false as const,
         dimmed,
         reducedMotion,
+        metricValue: metricValues.get(node.id),
+        hasMetric,
       },
     })
     index++
   }
 
-  // Convert edges to React Flow format
-  const flowEdges: Edge[] = processedEdges.map((e, i) => ({
-    id: `e-${i}-${e.from}-${e.to}`,
-    source: e.from,
-    target: e.to,
-    type: 'default',
-    animated: e.type === 'blocks' && !reducedMotion,
-    style: {
-      stroke:
-        focusedNodes && (!focusedNodes.has(e.from) || !focusedNodes.has(e.to))
-          ? 'rgba(100, 100, 100, 0.3)'
-          : '#555',
-    },
-  }))
+  // Convert edges to React Flow format with type-based styling
+  const flowEdges: Edge[] = processedEdges.map((e, i) => {
+    const isBlocks = e.type === 'blocks'
+    const isDimmed = focusedNodes && (!focusedNodes.has(e.from) || !focusedNodes.has(e.to))
+
+    return {
+      id: `e-${i}-${e.from}-${e.to}`,
+      source: e.from,
+      target: e.to,
+      type: 'default',
+      animated: isBlocks && !reducedMotion,
+      style: {
+        stroke: isDimmed ? 'rgba(100, 100, 100, 0.3)' : isBlocks ? '#888' : '#555',
+        strokeDasharray: isBlocks ? undefined : '5,5',
+        strokeWidth: isBlocks ? 2 : 1,
+      },
+      label: isBlocks ? undefined : e.type,
+      labelStyle: { fill: '#888', fontSize: 10 },
+    }
+  })
 
   return { nodes: flowNodes, edges: flowEdges }
 }
@@ -556,16 +869,16 @@ function getStatusIcon(status: string): { icon: string; color: string; label: st
     case 'done':
     case 'completed':
     case 'closed':
-      return { icon: '●', color: '#89d185', label: 'Closed' }
+      return { icon: '\u25CF', color: '#89d185', label: 'Closed' }
     case 'in_progress':
     case 'active':
-      return { icon: '◐', color: '#007acc', label: 'In Progress' }
+      return { icon: '\u25D0', color: '#007acc', label: 'In Progress' }
     case 'blocked':
-      return { icon: '⊘', color: '#f14c4c', label: 'Blocked' }
+      return { icon: '\u2298', color: '#f14c4c', label: 'Blocked' }
     case 'review':
-      return { icon: '◎', color: '#cca700', label: 'Review' }
+      return { icon: '\u25CE', color: '#cca700', label: 'Review' }
     default:
-      return { icon: '○', color: '#555', label: 'Open' }
+      return { icon: '\u25CB', color: '#555', label: 'Open' }
   }
 }
 
@@ -654,12 +967,12 @@ function GraphListView({ nodes, edges, onBeadClick, onBeadDoubleClick }: GraphLi
                       style={{ color: '#f14c4c' }}
                       title={`Blocked by: ${deps.blockedBy.join(', ')}`}
                     >
-                      ← {deps.blockedBy.length}
+                      &larr; {deps.blockedBy.length}
                     </span>
                   )}
                   {deps && deps.blocks.length > 0 && (
                     <span style={{ color: '#89d185' }} title={`Blocks: ${deps.blocks.join(', ')}`}>
-                      → {deps.blocks.length}
+                      &rarr; {deps.blocks.length}
                     </span>
                   )}
                 </div>
@@ -713,13 +1026,13 @@ export function GraphView({
   nodes: rawNodes,
   edges: rawEdges,
   density,
+  metrics,
   onBeadClick,
   onBeadDoubleClick,
 }: GraphViewProps) {
   const reducedMotion = useReducedMotion()
-  const [simplificationState, setSimplificationState] = useState<GraphSimplificationState>(
-    loadSimplificationState
-  )
+  const [simplificationState, setSimplificationState] =
+    useState<GraphSimplificationState>(loadSimplificationState)
   useEffect(() => {
     saveSimplificationState(simplificationState)
   }, [simplificationState])
@@ -736,35 +1049,71 @@ export function GraphView({
     [density, rawNodes.length, rawEdges.length]
   )
 
-  // Apply simplification
-  const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => applySimplification(rawNodes, rawEdges, simplificationState, reducedMotion),
-    [rawNodes, rawEdges, simplificationState, reducedMotion]
+  // Apply simplification (produces grid-positioned nodes)
+  const { nodes: simplifiedNodes, edges: simplifiedEdges } = useMemo(
+    () => applySimplification(rawNodes, rawEdges, simplificationState, metrics, reducedMotion),
+    [rawNodes, rawEdges, simplificationState, metrics, reducedMotion]
   )
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes as Node[])
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+  // Apply layout algorithm
+  const layoutNodes = useMemo(() => {
+    switch (simplificationState.layout) {
+      case 'hierarchical':
+        return applyHierarchicalLayout(simplifiedNodes, simplifiedEdges)
+      case 'manual':
+        return applyManualLayout(simplifiedNodes)
+      default:
+        return applyForceDirectedLayout(simplifiedNodes, simplifiedEdges, 1200, 800)
+    }
+  }, [simplifiedNodes, simplifiedEdges, simplificationState.layout])
 
-  // Update nodes when simplification changes
+  const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes as Node[])
+  const [edges, setEdges, onEdgesChange] = useEdgesState(simplifiedEdges)
+
+  // Update nodes when layout or simplification changes
   useMemo(() => {
-    setNodes(initialNodes as Node[])
-    setEdges(initialEdges)
-  }, [initialNodes, initialEdges, setNodes, setEdges])
+    setNodes(layoutNodes as Node[])
+    setEdges(simplifiedEdges)
+  }, [layoutNodes, simplifiedEdges, setNodes, setEdges])
 
   // Apply fisheye distortion when enabled and mouse is moving
   useEffect(() => {
     if (simplificationState.fisheyeMode && mousePosition) {
       const distortedNodes = applyFisheyeDistortion(
-        initialNodes as Node<NodeData>[],
+        layoutNodes as Node<NodeData>[],
         mousePosition.x,
         mousePosition.y
       )
       setNodes(distortedNodes as Node[])
     } else if (!simplificationState.fisheyeMode) {
-      // Reset to original positions when fisheye disabled
-      setNodes(initialNodes as Node[])
+      // Reset to layout positions when fisheye disabled
+      setNodes(layoutNodes as Node[])
     }
-  }, [simplificationState.fisheyeMode, mousePosition, initialNodes, setNodes])
+  }, [simplificationState.fisheyeMode, mousePosition, layoutNodes, setNodes])
+
+  // Save manual positions when nodes are dragged (only in manual mode)
+  const handleNodesChange: typeof onNodesChange = useCallback(
+    (changes) => {
+      onNodesChange(changes)
+
+      if (simplificationState.layout === 'manual') {
+        // Check for position changes (drag end)
+        const positionChanges = changes.filter(
+          (c) => c.type === 'position' && 'position' in c && c.position && !c.dragging
+        )
+        if (positionChanges.length > 0) {
+          const saved = loadManualPositions()
+          for (const change of positionChanges) {
+            if ('position' in change && change.position) {
+              saved[change.id] = change.position
+            }
+          }
+          saveManualPositions(saved)
+        }
+      }
+    },
+    [onNodesChange, simplificationState.layout]
+  )
 
   // Clean up pending RAF on unmount
   useEffect(() => {
@@ -809,9 +1158,9 @@ export function GraphView({
         rafRef.current = null
       }
       setMousePosition(null)
-      setNodes(initialNodes as Node[])
+      setNodes(layoutNodes as Node[])
     }
-  }, [simplificationState.fisheyeMode, initialNodes, setNodes])
+  }, [simplificationState.fisheyeMode, layoutNodes, setNodes])
 
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
@@ -828,7 +1177,7 @@ export function GraphView({
         }))
       }
 
-      // Callback for external handling
+      // Callback for external handling (opens bead detail panel)
       if (onBeadClick && !data.isCluster) {
         onBeadClick(node.id)
       }
@@ -862,19 +1211,26 @@ export function GraphView({
     // At low zoom, use simplified node renderers
     if (zoom < ZOOM_THRESHOLD_DETAILS) {
       return {
-        bead: ({ data }: { data: BeadData }) => (
-          <div
-            style={{
-              width: NODE_WIDTH,
-              height: NODE_HEIGHT,
-              borderRadius: '6px',
-              backgroundColor: '#2d2d2d',
-              border: `2px solid ${getStatusColor(data.status)}`,
-              opacity: data.dimmed ? 0.3 : 1,
-            }}
-          />
-        ),
-        cluster: ({ data }: { data: ClusterData }) => (
+        bead: ({ data }: { data: BeadData }) => {
+          const shapeStyle = getNodeShapeStyle(data.type)
+          const borderColor =
+            data.hasMetric && data.metricValue !== undefined
+              ? metricColor(data.metricValue)
+              : getStatusColor(data.status)
+          return (
+            <div
+              style={{
+                width: NODE_WIDTH,
+                height: NODE_HEIGHT,
+                backgroundColor: '#2d2d2d',
+                border: `2px solid ${borderColor}`,
+                opacity: data.dimmed ? 0.3 : 1,
+                ...shapeStyle,
+              }}
+            />
+          )
+        },
+        cluster: ({ data: _data }: { data: ClusterData }) => (
           <div
             style={{
               width: CLUSTER_NODE_WIDTH,
@@ -890,29 +1246,36 @@ export function GraphView({
 
     if (zoom < ZOOM_THRESHOLD_LABELS) {
       return {
-        bead: ({ data }: { data: BeadData }) => (
-          <div
-            style={{
-              padding: '10px 12px',
-              borderRadius: '6px',
-              backgroundColor: '#2d2d2d',
-              border: `2px solid ${getStatusColor(data.status)}`,
-              width: NODE_WIDTH,
-              minHeight: NODE_HEIGHT,
-              opacity: data.dimmed ? 0.3 : 1,
-            }}
-          >
+        bead: ({ data }: { data: BeadData }) => {
+          const shapeStyle = getNodeShapeStyle(data.type)
+          const borderColor =
+            data.hasMetric && data.metricValue !== undefined
+              ? metricColor(data.metricValue)
+              : getStatusColor(data.status)
+          return (
             <div
               style={{
-                fontSize: '11px',
-                color: '#888',
-                fontFamily: 'monospace',
+                padding: '10px 12px',
+                backgroundColor: '#2d2d2d',
+                border: `2px solid ${borderColor}`,
+                width: NODE_WIDTH,
+                minHeight: NODE_HEIGHT,
+                opacity: data.dimmed ? 0.3 : 1,
+                ...shapeStyle,
               }}
             >
-              {data.id}
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: '#888',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {data.id}
+              </div>
             </div>
-          </div>
-        ),
+          )
+        },
         cluster: ClusterNode,
       }
     }
@@ -938,7 +1301,7 @@ export function GraphView({
           aria-pressed={viewMode === 'graph'}
           aria-label="Graph view"
         >
-          <span aria-hidden="true">◇</span> Graph
+          <span aria-hidden="true">{'\u25C7'}</span> Graph
         </button>
         <button
           type="button"
@@ -947,7 +1310,7 @@ export function GraphView({
           aria-pressed={viewMode === 'list'}
           aria-label="List view (accessible alternative)"
         >
-          <span aria-hidden="true">≡</span> List
+          <span aria-hidden="true">{'\u2261'}</span> List
         </button>
       </div>
 
@@ -962,12 +1325,13 @@ export function GraphView({
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={handleNodeClick}
           onNodeDoubleClick={handleNodeDoubleClick}
           onMove={handleMove}
           nodeTypes={effectiveNodeTypes}
+          nodesDraggable={simplificationState.layout === 'manual'}
           fitView
           fitViewOptions={{ padding: 0.2 }}
           minZoom={0.1}
@@ -984,7 +1348,11 @@ export function GraphView({
             nodeColor={(node) => {
               const data = node.data as NodeData
               if (data.isCluster) return '#007acc'
-              return getStatusColor((data as BeadData).status)
+              const beadData = data as BeadData
+              if (beadData.hasMetric && beadData.metricValue !== undefined) {
+                return metricColor(beadData.metricValue)
+              }
+              return getStatusColor(beadData.status)
             }}
             maskColor="rgba(30, 30, 30, 0.8)"
             style={{ backgroundColor: '#252526' }}
