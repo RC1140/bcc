@@ -572,8 +572,17 @@ export function VisualBuilder({
     return { initialNodes: allNodes, initialEdges: edges }
   }, [steps, selectedStepId, reducedMotion])
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes)
-  const [edges, , onEdgesChange] = useEdgesState(initialEdges)
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  // Sync nodes/edges when steps change (one-way sync: TOML -> visual)
+  useEffect(() => {
+    setNodes(initialNodes)
+  }, [initialNodes, setNodes])
+
+  useEffect(() => {
+    setEdges(initialEdges)
+  }, [initialEdges, setEdges])
 
   // No-op for read-only mode
   const onConnect = useCallback(() => {}, [])

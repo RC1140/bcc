@@ -26,6 +26,7 @@ import { useConnectionState, useCook, useFormulaContent, useSave, useSling } fro
 import { useHotkey } from '../hooks/use-hotkeys'
 import {
   type FormulaParseError,
+  type ParsedFormula,
   extractStepIds,
   parseAndValidateFormula,
   updateStepField,
@@ -216,6 +217,7 @@ function FormulaPage() {
   const [tomlContent, setTomlContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
   const [parseErrors, setParseErrors] = useState<FormulaParseError[]>([])
+  const [parsedFormula, setParsedFormula] = useState<ParsedFormula | null>(null)
   const [varValues, setVarValues] = useState<Record<string, string>>({})
   const [slingDialogOpen, setSlingDialogOpen] = useState(false)
   const [pourDialogOpen, setPourDialogOpen] = useState(false)
@@ -272,6 +274,7 @@ function FormulaPage() {
   useEffect(() => {
     setTomlContent('')
     setParseErrors([])
+    setParsedFormula(null)
     setVarValues({})
     setSelectedStepId(null)
   }, [])
@@ -282,12 +285,14 @@ function FormulaPage() {
       setTomlContent(loadedContent)
       setSavedContent(loadedContent)
       hasAnnouncedUnsavedRef.current = false
-      // Parse initial content
+      // Parse initial content (client-side for one-way sync to visual view)
       const result = parseAndValidateFormula(loadedContent)
       if (!result.ok) {
         setParseErrors(result.errors)
+        setParsedFormula(null)
       } else {
         setParseErrors([])
+        setParsedFormula(result.formula)
       }
     }
   }, [loadedContent])
@@ -359,12 +364,14 @@ function FormulaPage() {
     (stepId: string, field: string, value: string | number | string[]) => {
       setTomlContent((prev) => {
         const updated = updateStepField(prev, stepId, field, value)
-        // Re-parse to update errors and trigger re-cook
+        // Re-parse to update errors and sync visual view
         const parseResult = parseAndValidateFormula(updated)
         if (!parseResult.ok) {
           setParseErrors(parseResult.errors)
+          setParsedFormula(null)
         } else {
           setParseErrors([])
+          setParsedFormula(parseResult.formula)
         }
         return updated
       })
@@ -372,11 +379,30 @@ function FormulaPage() {
     []
   )
 
-  // Get the currently selected step from cook result
+  // Steps for the visual builder: prefer client-side parsed formula for instant
+  // one-way sync (TOML -> visual), fall back to server-side cook result.
+  // This enables the visual view to update as the user types without saving.
+  const visualSteps = useMemo((): ProtoBead[] | undefined => {
+    if (parsedFormula?.steps && parsedFormula.steps.length > 0) {
+      return parsedFormula.steps
+    }
+    return result?.steps
+  }, [parsedFormula?.steps, result?.steps])
+
+  const visualVars = useMemo(() => {
+    if (parsedFormula?.vars && Object.keys(parsedFormula.vars).length > 0) {
+      return parsedFormula.vars
+    }
+    return result?.vars
+  }, [parsedFormula?.vars, result?.vars])
+
+  // Get the currently selected step from client-side parse or cook result
   const selectedStep = useMemo((): ProtoBead | null => {
-    if (!selectedStepId || !result?.steps) return null
-    return result.steps.find((s) => s.id === selectedStepId) ?? null
-  }, [selectedStepId, result?.steps])
+    if (!selectedStepId) return null
+    const steps = visualSteps
+    if (!steps) return null
+    return steps.find((s) => s.id === selectedStepId) ?? null
+  }, [selectedStepId, visualSteps])
 
   // Get all step IDs for dependency selection
   const availableStepIds = useMemo((): string[] => {
@@ -399,12 +425,14 @@ function FormulaPage() {
     // Update the TOML source with the new default value
     setTomlContent((prev) => {
       const updated = updateVarDefault(prev, key, value)
-      // Re-parse to update errors
+      // Re-parse to update errors and sync visual view
       const result = parseAndValidateFormula(updated)
       if (!result.ok) {
         setParseErrors(result.errors)
+        setParsedFormula(null)
       } else {
         setParseErrors([])
+        setParsedFormula(result.formula)
       }
       return updated
     })
@@ -418,12 +446,14 @@ function FormulaPage() {
         hasAnnouncedUnsavedRef.current = true
         announce('Unsaved changes')
       }
-      // Parse and validate on change
+      // Parse and validate on change (client-side for one-way sync to visual view)
       const result = parseAndValidateFormula(content)
       if (!result.ok) {
         setParseErrors(result.errors)
+        setParsedFormula(null)
       } else {
         setParseErrors([])
+        setParsedFormula(result.formula)
       }
     },
     [announce, savedContent]
@@ -669,10 +699,10 @@ function FormulaPage() {
 
           {!isLoading && !contentLoading && !error && !contentError && viewMode === 'visual' && (
             <div style={visualContainerStyle}>
-              {result?.steps ? (
+              {visualSteps ? (
                 <VisualBuilder
-                  steps={result.steps}
-                  vars={result.vars}
+                  steps={visualSteps}
+                  vars={visualVars}
                   onStepSelect={handleStepSelect}
                   selectedStepId={selectedStepId}
                 />
