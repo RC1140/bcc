@@ -227,7 +227,14 @@ export function BeadList({ onBeadClick }: BeadListProps) {
   if (isLoading && beads.length === 0) {
     return (
       <div style={containerStyle}>
-        <div style={loadingStyle}>Loading beads...</div>
+        <div
+          style={loadingStyle}
+          // biome-ignore lint/a11y/useSemanticElements: intentional ARIA status role for loading state
+          role="status"
+          aria-live="polite"
+        >
+          Loading beads...
+        </div>
       </div>
     )
   }
@@ -235,7 +242,7 @@ export function BeadList({ onBeadClick }: BeadListProps) {
   if (error) {
     return (
       <div style={containerStyle}>
-        <div style={errorStyle}>
+        <div style={errorStyle} role="alert">
           <span>Failed to load beads</span>
           <span style={{ fontSize: '12px', color: '#9ca3af' }}>{error.message}</span>
           <button
@@ -275,7 +282,16 @@ export function BeadList({ onBeadClick }: BeadListProps) {
         <span style={countTextStyle}>
           {filteredBeads.length} of {beads.length} {beads.length === 1 ? 'bead' : 'beads'}
         </span>
-        {isLoading && <span style={{ fontSize: '11px', color: '#9ca3af' }}>Refreshing...</span>}
+        {isLoading && (
+          <span
+            style={{ fontSize: '11px', color: '#9ca3af' }}
+            // biome-ignore lint/a11y/useSemanticElements: intentional ARIA status role for refresh indicator
+            role="status"
+            aria-live="polite"
+          >
+            Refreshing...
+          </span>
+        )}
       </div>
 
       {/* List */}

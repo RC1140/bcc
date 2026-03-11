@@ -375,7 +375,12 @@ export function PourDialog({
 
         <div style={contentStyle}>
           {hasPoured && (
-            <div style={successMessageStyle}>
+            <div
+              style={successMessageStyle}
+              // biome-ignore lint/a11y/useSemanticElements: intentional ARIA status role for pour success message
+              role="status"
+              aria-live="polite"
+            >
               <div style={successTitleStyle}>Successfully created molecule</div>
               <div style={successTextStyle}>
                 {pourResult.bead_count ?? 0} beads created
@@ -415,8 +420,8 @@ export function PourDialog({
                     }}
                     role="alert"
                   >
-                    Are you sure? This will delete{' '}
-                    {pourResult.bead_count ?? 0} beads created by this pour
+                    Are you sure? This will delete {pourResult.bead_count ?? 0} beads created by
+                    this pour
                     {pouredAt && (
                       <span style={{ color: '#94a3b8', marginLeft: '4px' }}>
                         (poured at{' '}

@@ -390,13 +390,26 @@ function MarkdownContent({ content }: { content: string }) {
   )
 }
 
+/** Top-4 dependency types shown in UI (per spec) */
+const TOP_DEPENDENCY_TYPES: Record<string, string> = {
+  blocks: 'Blocks',
+  related: 'Related',
+  'parent-child': 'Parent–Child',
+  duplicates: 'Duplicate',
+}
+
+/** Format dependency type for display, showing only top-4 types */
+function formatDependencyType(depType: string): string {
+  return TOP_DEPENDENCY_TYPES[depType] ?? 'Dependency'
+}
+
 /** Dependency card */
 function DependencyCard({ dep }: { dep: BeadDependent }) {
   return (
     <div style={dependencyCardStyle}>
       <div style={dependencyTitleStyle}>{dep.title}</div>
       <div style={dependencyMetaStyle}>
-        {dep.id} · {dep.status} · {dep.dependency_type}
+        {dep.id} · {dep.status} · {formatDependencyType(dep.dependency_type)}
       </div>
     </div>
   )
@@ -589,7 +602,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                 {/* Description */}
                 {bead.description && (
                   <div style={sectionStyle}>
-                    <div style={sectionHeaderStyle}>Description</div>
+                    <h3 style={sectionHeaderStyle}>Description</h3>
                     <div style={sectionContentStyle}>
                       <MarkdownContent content={displayDescription ?? ''} />
                       {needsTruncation && (
@@ -597,6 +610,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                           type="button"
                           style={expandButtonStyle}
                           onClick={() => setShowFullDescription(!showFullDescription)}
+                          aria-expanded={showFullDescription}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = '#3c3c3c'
                           }}
@@ -616,6 +630,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                   <div style={sectionStyle}>
                     <button
                       type="button"
+                      aria-expanded={showAcceptanceCriteria}
                       style={{
                         ...sectionHeaderStyle,
                         background: 'none',
@@ -630,7 +645,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                       }}
                       onClick={() => setShowAcceptanceCriteria(!showAcceptanceCriteria)}
                     >
-                      <span>{showAcceptanceCriteria ? '▼' : '▶'}</span>
+                      <span aria-hidden="true">{showAcceptanceCriteria ? '▼' : '▶'}</span>
                       Acceptance Criteria
                     </button>
                     {showAcceptanceCriteria && (
@@ -644,7 +659,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                 {/* Design */}
                 {bead.design && (
                   <div style={sectionStyle}>
-                    <div style={sectionHeaderStyle}>Design</div>
+                    <h3 style={sectionHeaderStyle}>Design</h3>
                     <div style={sectionContentStyle}>
                       <MarkdownContent content={bead.design} />
                     </div>
@@ -654,7 +669,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                 {/* Notes */}
                 {bead.notes && (
                   <div style={sectionStyle}>
-                    <div style={sectionHeaderStyle}>Notes</div>
+                    <h3 style={sectionHeaderStyle}>Notes</h3>
                     <div style={sectionContentStyle}>
                       <MarkdownContent content={bead.notes} />
                     </div>
@@ -664,7 +679,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                 {/* Labels */}
                 {bead.labels && bead.labels.length > 0 && (
                   <div style={sectionStyle}>
-                    <div style={sectionHeaderStyle}>Labels</div>
+                    <h3 style={sectionHeaderStyle}>Labels</h3>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                       {bead.labels.map((label) => (
                         <LabelChip key={label} label={label} />
@@ -675,7 +690,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
 
                 {/* Metadata Grid */}
                 <div style={sectionStyle}>
-                  <div style={sectionHeaderStyle}>Details</div>
+                  <h3 style={sectionHeaderStyle}>Details</h3>
                   <div style={metadataGridStyle}>
                     <div style={metadataItemStyle}>
                       <span style={metadataLabelStyle}>Owner</span>
@@ -707,7 +722,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                 {/* Dependencies (Blocks) */}
                 {bead.dependents && bead.dependents.length > 0 && (
                   <div style={sectionStyle}>
-                    <div style={sectionHeaderStyle}>Blocks ({bead.dependents.length})</div>
+                    <h3 style={sectionHeaderStyle}>Blocks ({bead.dependents.length})</h3>
                     {bead.dependents.map((dep) => (
                       <DependencyCard key={dep.id} dep={dep} />
                     ))}
@@ -717,7 +732,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                 {/* Dependencies (Blocked By) */}
                 {bead.dependencies && bead.dependencies.length > 0 && (
                   <div style={sectionStyle}>
-                    <div style={sectionHeaderStyle}>Blocked By ({bead.dependencies.length})</div>
+                    <h3 style={sectionHeaderStyle}>Blocked By ({bead.dependencies.length})</h3>
                     {bead.dependencies.map((dep) => (
                       <DependencyCard key={dep.id} dep={dep} />
                     ))}
@@ -727,7 +742,7 @@ export function BeadDetail({ bead, onClose, isLoading }: BeadDetailProps) {
                 {/* Agent-specific fields */}
                 {bead.issue_type === 'agent' && (
                   <div style={sectionStyle}>
-                    <div style={sectionHeaderStyle}>Agent Info</div>
+                    <h3 style={sectionHeaderStyle}>Agent Info</h3>
                     <div style={metadataGridStyle}>
                       {bead.hook_bead && (
                         <div style={metadataItemStyle}>

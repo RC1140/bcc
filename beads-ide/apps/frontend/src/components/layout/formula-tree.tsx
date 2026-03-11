@@ -189,7 +189,13 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
 
 function LoadingSkeleton() {
   return (
-    <div style={skeletonContainerStyle}>
+    <div
+      style={skeletonContainerStyle}
+      // biome-ignore lint/a11y/useSemanticElements: intentional ARIA status role for loading skeleton
+      role="status"
+      aria-live="polite"
+      aria-label="Loading formulas"
+    >
       <div style={{ ...skeletonRowStyle, width: '60%' }} />
       <div style={{ ...skeletonRowStyle, width: '80%' }} />
       <div style={{ ...skeletonRowStyle, width: '45%' }} />
@@ -287,9 +293,17 @@ export function FormulaTree() {
         const isCollapsed = collapsed[group.searchPath] ?? false
 
         return (
-          <fieldset key={group.searchPath} style={{ border: 'none', margin: 0, padding: 0 }}>
+          <div
+            key={group.searchPath}
+            // biome-ignore lint/a11y/useSemanticElements: div with role="group" within tree pattern, fieldset would disrupt layout
+            role="group"
+            aria-label={group.label}
+            style={{ border: 'none', margin: 0, padding: 0 }}
+          >
+            {/* biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: button acts as treeitem in WAI-ARIA tree pattern */}
             <button
               type="button"
+              role="treeitem"
               aria-expanded={!isCollapsed}
               style={{ ...groupHeaderStyle, width: '100%', background: 'none', border: 'none' }}
               onClick={() => toggleGroup(group.searchPath)}
@@ -307,9 +321,11 @@ export function FormulaTree() {
                 const isActive = formula.name === currentFormula
 
                 return (
+                  // biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: button acts as treeitem in WAI-ARIA tree pattern
                   <button
                     type="button"
                     key={formula.path}
+                    role="treeitem"
                     aria-selected={isActive}
                     style={{
                       ...itemStyle,
@@ -331,7 +347,7 @@ export function FormulaTree() {
                   </button>
                 )
               })}
-          </fieldset>
+          </div>
         )
       })}
     </nav>

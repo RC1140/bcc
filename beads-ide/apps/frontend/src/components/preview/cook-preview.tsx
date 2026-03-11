@@ -22,6 +22,7 @@ interface UnboundVarsProps {
 function UnboundVars({ vars }: UnboundVarsProps) {
   return (
     <div
+      role="alert"
       style={{
         backgroundColor: '#7f1d1d',
         border: '1px solid #dc2626',
@@ -74,6 +75,7 @@ interface CookErrorProps {
 function CookError({ error, stderr }: CookErrorProps) {
   return (
     <div
+      role="alert"
       style={{
         backgroundColor: '#1e1e1e',
         border: '1px solid #dc2626',
@@ -375,6 +377,7 @@ function FormulaEditor({ content, onChange, formulaPath }: FormulaEditorProps) {
         value={content}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Formula content..."
+        aria-label="Formula editor"
         style={{
           flex: 1,
           width: '100%',

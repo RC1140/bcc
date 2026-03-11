@@ -297,7 +297,13 @@ function collectDirtyNames(isDirtyFn: (name: string) => boolean, nodes: TreeNode
 
 function LoadingSkeleton() {
   return (
-    <div style={skeletonContainerStyle}>
+    <div
+      style={skeletonContainerStyle}
+      // biome-ignore lint/a11y/useSemanticElements: intentional ARIA status role for loading skeleton
+      role="status"
+      aria-live="polite"
+      aria-label="Loading file tree"
+    >
       <div style={{ ...skeletonRowStyle, width: '60%' }} />
       <div style={{ ...skeletonRowStyle, width: '80%' }} />
       <div style={{ ...skeletonRowStyle, width: '45%' }} />
@@ -569,14 +575,18 @@ export function WorkspaceTree({ filter }: WorkspaceTreeProps) {
                     <ChevronIcon expanded={!!item.isExpanded} />
                     <FolderIcon open={!!item.isExpanded} />
                     <span style={{ ...nodeNameStyle, marginLeft: '4px' }}>{item.name}</span>
-                    {item.isDirty && <span style={dirtyDotStyle} />}
+                    {item.isDirty && (
+                      <span style={dirtyDotStyle} aria-label="Unsaved changes" role="img" />
+                    )}
                   </>
                 ) : (
                   <>
                     <span style={{ width: '16px', flexShrink: 0 }} />
                     <FileCodeIcon />
                     <span style={{ ...nodeNameStyle, marginLeft: '4px' }}>{item.name}</span>
-                    {item.isDirty && <span style={dirtyDotStyle} />}
+                    {item.isDirty && (
+                      <span style={dirtyDotStyle} aria-label="Unsaved changes" role="img" />
+                    )}
                   </>
                 )}
               </div>
